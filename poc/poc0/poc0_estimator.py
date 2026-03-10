@@ -188,3 +188,78 @@ def human_bytes(num: int) -> str:
     return f"{num:,} B ({mib:.2f} MiB)"
 
 
+def main() -> None:
+    parser = argparse.ArgumentParser(description="POC-0 memory estimator")
+    parser.add_argument("--input", required=True, help="CSV file with opcode,count")
+    parser.add_argument("--avg-br-table-targets", type=int, default=4)
+    parser.add_argument("--avg-select-types", type=int, default=1)
+    parser.add_argument("--avg-try-catches", type=int, default=2)
+    args = parser.parse_args()
+
+    path = Path(args.input)
+    if not path.exists():
+        raise SystemExit(f"Input file not found: {path}")
+
+    by_category: Dict[str, int] = Counter()
+    by_opcode: Dict[str, int] = Counter()
+
+    for opcode, count in read_frequency_csv(path):
+        key = classify_opcode(opcode)
+        by_category[key] += count
+        by_opcode[normalize_opcode(opcode)] += count
+
+    total_instr = sum(by_category.values())
+    old_total = total_instr * CURRENT_INSTRUCTION_BYTES
+
+    logical_total = 0
+    cat_rows = []
+    for key, count in sorted(by_category.items(), key=lambda x: (-x[1], x[0])):
+        cat = CATEGORIES[key]
+        if cat.is_dynamic:
+            imm = estimate_dynamic_bytes(
+                key,
+                count,
+                args.avg_br_table_targets,
+                args.avg_select_types,
+                args.avg_try_catches,
+            )
+            logical = count * HEADER_BYTES + imm
+        else:
+            logical = count * (HEADER_BYTES + cat.imm_bytes)
+        logical_total += logical
+        cat_rows.append((cat.name, count, logical))
+
+    wasted = old_total - logical_total
+    reduction = (wasted / old_total * 100.0) if old_total else 0.0
+
+    print("=== POC-0 WasmEdge Instruction Baseline Estimator ===")
+    print(f"Input file: {path}")
+    print(f"Total instructions: {total_instr:,}")
+    print("")
+    print("Category breakdown:")
+    for name, count, logical in cat_rows:
+        pct = (count / total_instr * 100.0) if total_instr else 0.0
+        print(f"- {name:<38} {count:>10,} ({pct:5.1f}%) | logical: {human_bytes(logical)}")
+
+    print("")
+    print("Totals:")
+    print(f"- Current model (fixed 32B each): {human_bytes(old_total)}")
+    print(f"- Estimated logical needed      : {human_bytes(logical_total)}")
+    print(f"- Estimated waste               : {human_bytes(wasted)}")
+    print(f"- Estimated reducible fraction  : {reduction:.2f}%")
+
+    print("")
+    print("Top 12 opcodes by count:")
+    for op, count in sorted(by_opcode.items(), key=lambda x: (-x[1], x[0]))[:12]:
+        print(f"- {op:<30} {count:>10,}")
+
+    print("")
+    print("Note:")
+    print("- This is a baseline estimator for planning/POC.")
+    print("- Dynamic immediates use average assumptions from CLI args.")
+    print("- Real final numbers will come from instrumented runtime measurement.")
+
+
+if __name__ == "__main__":
+    main()
+
