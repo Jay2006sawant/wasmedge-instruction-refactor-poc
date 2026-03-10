@@ -108,3 +108,83 @@ MEMARG_MARKERS = (
     ".load",
     ".store",
     "atomic.",
+    "memory.atomic",
+)
+
+
+def normalize_opcode(op: str) -> str:
+    op = op.strip()
+    op = op.replace("__", ".")
+    return op.lower()
+
+
+def classify_opcode(opcode: str) -> str:
+    op = normalize_opcode(opcode)
+
+    if op in NONE_OPS:
+        return "none"
+    if op in ("block", "loop", "if"):
+        return "blocktype"
+    if op in ("br_table",):
+        return "br_table"
+    if op in ("select_t", "select.t"):
+        return "select_t"
+    if op in ("try_table", "try.table"):
+        return "try_table"
+    if op in JUMP_INDEX1_OPS:
+        return "index1"
+    if op.endswith(".const"):
+        if op.startswith(("i32", "f32")):
+            return "const32"
+        if op.startswith(("i64", "f64")):
+            return "const64"
+        return "const128"
+    if "shuffle" in op or op == "v128.const":
+        return "const128"
+    if "lane" in op:
+        return "lane"
+    if op in INDEX2_OPS:
+        return "index2"
+    if any(marker in op for marker in MEMARG_MARKERS):
+        return "memarg"
+    if op.startswith(INDEX1_PREFIXES) or ".get" in op or ".set" in op:
+        return "index1"
+    return "other"
+
+
+def read_frequency_csv(path: Path) -> Iterable[Tuple[str, int]]:
+    with path.open("r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            opcode = row["opcode"].strip()
+            count = int(row["count"])
+            if count > 0:
+                yield opcode, count
+
+
+def estimate_dynamic_bytes(
+    category_key: str,
+    count: int,
+    avg_br_table_targets: int,
+    avg_select_types: int,
+    avg_try_catches: int,
+) -> int:
+    if category_key == "br_table":
+        # label count + labels (JumpDescriptor size is 16)
+        return count * (4 + max(avg_br_table_targets, 1) * 16)
+    if category_key == "select_t":
+        # vec count + val types (ValType is 8 bytes)
+        return count * (4 + max(avg_select_types, 1) * 8)
+    if category_key == "try_table":
+        # rough estimate: blocktype + catch vec count + catch descriptors
+        # catch descriptor approximation = 24 bytes
+        return count * (8 + 4 + max(avg_try_catches, 1) * 24)
+    return 0
+
+
+def human_bytes(num: int) -> str:
+    kib = num / 1024.0
+    mib = kib / 1024.0
+    return f"{num:,} B ({mib:.2f} MiB)"
+
+
