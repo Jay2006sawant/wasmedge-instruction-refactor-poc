@@ -108,3 +108,83 @@ def encode_immediate(op: str, args: Tuple[int, ...]) -> bytes:
 def immediate_size(op: str) -> int:
     if op in NO_IMM:
         return 0
+    if op in INDEX1 or op in CONST32:
+        return 4
+    if op in CONST64:
+        return 8
+    if op in MEMARG:
+        return 16
+    raise ValueError(f"Unsupported opcode kind: {op}")
+
+
+def decode_immediate(op: str, data: bytes, pos: int) -> Tuple[Tuple[int, ...], int]:
+    if op in NO_IMM:
+        return tuple(), pos
+    if op in INDEX1:
+        end = pos + 4
+        (v,) = struct.unpack("<I", data[pos:end])
+        return (v,), end
+    if op in CONST32:
+        end = pos + 4
+        (v,) = struct.unpack("<i", data[pos:end])
+        return (v,), end
+    if op in CONST64:
+        end = pos + 8
+        (v,) = struct.unpack("<q", data[pos:end])
+        return (v,), end
+    if op in MEMARG:
+        end = pos + 16
+        align, offset, memidx = struct.unpack("<IQI", data[pos:end])
+        return (align, offset, memidx), end
+    raise ValueError(f"Unsupported opcode kind: {op}")
+
+
+def encode_program_to_bytecode(program: List[Tuple[str, Tuple[int, ...]]]) -> bytes:
+    out = bytearray()
+    for op, args in program:
+        out.append(OPCODE_TO_ID[op])
+        out.extend(encode_immediate(op, args))
+    return bytes(out)
+
+
+def decode_legacy(bytecode: bytes) -> List[Instr]:
+    instrs: List[Instr] = []
+    i = 0
+    while i < len(bytecode):
+        offset = i
+        op_id = bytecode[i]
+        i += 1
+        op = ID_TO_OPCODE[op_id]
+        args, i = decode_immediate(op, bytecode, i)
+        instrs.append(Instr(opcode=op, args=args, offset=offset))
+    return instrs
+
+
+def decode_split(bytecode: bytes) -> List[Instr]:
+    stream = SplitStream(opcodes=[], offsets=[], imm_offsets=[], imm_blob=bytearray())
+    i = 0
+    while i < len(bytecode):
+        offset = i
+        op_id = bytecode[i]
+        i += 1
+        op = ID_TO_OPCODE[op_id]
+        imm_len = immediate_size(op)
+        stream.opcodes.append(op_id)
+        stream.offsets.append(offset)
+        if imm_len == 0:
+            stream.imm_offsets.append(OFFSET_NONE)
+        else:
+            stream.imm_offsets.append(len(stream.imm_blob))
+            stream.imm_blob.extend(bytecode[i : i + imm_len])
+            i += imm_len
+
+    # decode split representation back into logical instruction list
+    out: List[Instr] = []
+    for idx, op_id in enumerate(stream.opcodes):
+        op = ID_TO_OPCODE[op_id]
+        imm_off = stream.imm_offsets[idx]
+        if imm_off == OFFSET_NONE:
+            args = tuple()
+        else:
+            args, _ = decode_immediate(op, stream.imm_blob, imm_off)
+        out.append(Instr(opcode=op, args=args, offset=stream.offsets[idx]))
