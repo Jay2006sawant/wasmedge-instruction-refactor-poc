@@ -188,3 +188,52 @@ def decode_split(bytecode: bytes) -> List[Instr]:
         else:
             args, _ = decode_immediate(op, stream.imm_blob, imm_off)
         out.append(Instr(opcode=op, args=args, offset=stream.offsets[idx]))
+    return out
+
+
+def parity(a: List[Instr], b: List[Instr]) -> Tuple[bool, str]:
+    if len(a) != len(b):
+        return False, f"count mismatch: {len(a)} vs {len(b)}"
+    for idx, (x, y) in enumerate(zip(a, b)):
+        if x.opcode != y.opcode:
+            return False, f"opcode mismatch at #{idx}: {x.opcode} vs {y.opcode}"
+        if x.args != y.args:
+            return False, f"args mismatch at #{idx} ({x.opcode}): {x.args} vs {y.args}"
+        if x.offset != y.offset:
+            return False, f"offset mismatch at #{idx}: {x.offset} vs {y.offset}"
+    return True, "parity passed"
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="POC-2 dual decode parity")
+    parser.add_argument("--input", required=True, help="Program CSV")
+    args = parser.parse_args()
+
+    path = Path(args.input)
+    if not path.exists():
+        raise SystemExit(f"Input file not found: {path}")
+
+    program = parse_csv(path)
+    bytecode = encode_program_to_bytecode(program)
+    legacy = decode_legacy(bytecode)
+    split = decode_split(bytecode)
+    ok, details = parity(legacy, split)
+
+    print("=== POC-2 Dual Decode Parity ===")
+    print(f"Input file              : {path}")
+    print(f"Encoded bytecode length : {len(bytecode)} B")
+    print(f"Legacy decoded count    : {len(legacy)}")
+    print(f"Split decoded count     : {len(split)}")
+    print(f"Parity                  : {'PASS' if ok else 'FAIL'}")
+    print(f"Details                 : {details}")
+
+    if legacy:
+        print("")
+        print("First 8 decoded instructions:")
+        for ins in legacy[:8]:
+            print(f"- @off={ins.offset:<3} {ins.opcode:<10} args={ins.args}")
+
+
+if __name__ == "__main__":
+    main()
+
