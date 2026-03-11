@@ -168,3 +168,48 @@ def parity_check(a: List[Instr], b: List[Instr]) -> Tuple[bool, str]:
 
 
 def estimate_bytes_old(n: int) -> int:
+    return n * CURRENT_INSTR_BYTES
+
+
+def estimate_bytes_split(stream: SplitStream) -> int:
+    # opcodes as compact u8 + imm offset u32 per instruction + immediate blob bytes
+    return len(stream.opcodes) + (4 * len(stream.imm_offsets)) + len(stream.imm_blob)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="POC-1 split storage prototype")
+    parser.add_argument("--input", required=True, help="CSV program file")
+    args = parser.parse_args()
+
+    path = Path(args.input)
+    if not path.exists():
+        raise SystemExit(f"Input file not found: {path}")
+
+    original = parse_csv(path)
+    stream = encode_split(original)
+    decoded = decode_split(stream)
+    ok, msg = parity_check(original, decoded)
+
+    old_bytes = estimate_bytes_old(len(original))
+    new_bytes = estimate_bytes_split(stream)
+    saved = old_bytes - new_bytes
+    saved_pct = (saved / old_bytes * 100.0) if old_bytes else 0.0
+
+    print("=== POC-1 Split Storage Prototype ===")
+    print(f"Input file                 : {path}")
+    print(f"Instruction count          : {len(original)}")
+    print(f"Opcode bytes               : {len(stream.opcodes)}")
+    print(f"Immediate offset bytes     : {len(stream.imm_offsets) * 4}")
+    print(f"Immediate blob bytes       : {len(stream.imm_blob)}")
+    print("")
+    print(f"Old model estimate         : {old_bytes} B")
+    print(f"Split model estimate       : {new_bytes} B")
+    print(f"Estimated savings          : {saved} B ({saved_pct:.2f}%)")
+    print("")
+    print(f"Roundtrip parity           : {'PASS' if ok else 'FAIL'}")
+    print(f"Parity details             : {msg}")
+
+
+if __name__ == "__main__":
+    main()
+
