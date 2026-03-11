@@ -98,3 +98,73 @@ def encode_immediate(op: str, args: Tuple[int, ...]) -> bytes:
     raise ValueError(f"Unsupported opcode kind: {op}")
 
 
+def decode_immediate(op: str, blob: bytes, start: int) -> Tuple[Tuple[int, ...], int]:
+    if op in NO_IMM:
+        return tuple(), start
+    if op in INDEX1:
+        end = start + 4
+        (idx,) = struct.unpack("<I", blob[start:end])
+        return (idx,), end
+    if op in CONST32:
+        end = start + 4
+        (num,) = struct.unpack("<i", blob[start:end])
+        return (num,), end
+    if op in CONST64:
+        end = start + 8
+        (num,) = struct.unpack("<q", blob[start:end])
+        return (num,), end
+    if op in MEMARG:
+        end = start + 16
+        align, offset, memidx = struct.unpack("<IQI", blob[start:end])
+        return (align, offset, memidx), end
+    raise ValueError(f"Unsupported opcode kind: {op}")
+
+
+@dataclass
+class SplitStream:
+    opcodes: List[int]
+    imm_offsets: List[int]
+    imm_blob: bytearray
+
+
+def encode_split(instrs: List[Instr]) -> SplitStream:
+    opcodes: List[int] = []
+    imm_offsets: List[int] = []
+    blob = bytearray()
+
+    for ins in instrs:
+        opcodes.append(OPCODE_TO_ID[ins.opcode])
+        imm = encode_immediate(ins.opcode, ins.args)
+        if len(imm) == 0:
+            imm_offsets.append(OFFSET_NONE)
+        else:
+            imm_offsets.append(len(blob))
+            blob.extend(imm)
+    return SplitStream(opcodes=opcodes, imm_offsets=imm_offsets, imm_blob=blob)
+
+
+def decode_split(stream: SplitStream) -> List[Instr]:
+    out: List[Instr] = []
+    for i, op_id in enumerate(stream.opcodes):
+        op = ID_TO_OPCODE[op_id]
+        off = stream.imm_offsets[i]
+        if off == OFFSET_NONE:
+            out.append(Instr(opcode=op, args=tuple()))
+        else:
+            args, _ = decode_immediate(op, stream.imm_blob, off)
+            out.append(Instr(opcode=op, args=args))
+    return out
+
+
+def parity_check(a: List[Instr], b: List[Instr]) -> Tuple[bool, str]:
+    if len(a) != len(b):
+        return False, f"Instruction count mismatch: {len(a)} vs {len(b)}"
+    for i, (x, y) in enumerate(zip(a, b)):
+        if x.opcode != y.opcode:
+            return False, f"Opcode mismatch at #{i}: {x.opcode} vs {y.opcode}"
+        if x.args != y.args:
+            return False, f"Args mismatch at #{i} ({x.opcode}): {x.args} vs {y.args}"
+    return True, "Parity passed"
+
+
+def estimate_bytes_old(n: int) -> int:
