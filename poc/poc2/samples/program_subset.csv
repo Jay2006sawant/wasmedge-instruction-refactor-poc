@@ -1,0 +1,14 @@
+opcode,arg0,arg1,arg2
+i32.const,11,,
+local.set,0,,
+local.get,0,,
+i32.const,7,,
+i32.add,,,
+br_if,2,,
+i32.store,2,24,0
+i32.load,2,24,0
+i64.const,900,,
+call,4,,
+drop,,,
+nop,,,
+end,,,
