@@ -128,3 +128,103 @@ def decode_immediate(op: str, blob: bytes, pos: int) -> Tuple[Tuple[int, ...], i
         return (v,), end
     if op in CONST64:
         end = pos + 8
+        (v,) = struct.unpack("<q", blob[pos:end])
+        return (v,), end
+    if op in MEMARG:
+        end = pos + 16
+        align, offset, memidx = struct.unpack("<IQI", blob[pos:end])
+        return (align, offset, memidx), end
+    raise ValueError(f"Unsupported opcode kind: {op}")
+
+
+def encode_split(instrs: List[Instr]) -> SplitStream:
+    opcodes: List[int] = []
+    imm_offsets: List[int] = []
+    blob = bytearray()
+    for ins in instrs:
+        opcodes.append(OPCODE_TO_ID[ins.opcode])
+        imm = encode_immediate(ins.opcode, ins.args)
+        if len(imm) == 0:
+            imm_offsets.append(OFFSET_NONE)
+        else:
+            imm_offsets.append(len(blob))
+            blob.extend(imm)
+    return SplitStream(opcodes=opcodes, imm_offsets=imm_offsets, imm_blob=blob)
+
+
+def read_i32(memory: bytearray, addr: int) -> int:
+    raw = bytes(memory[addr : addr + 4])
+    return struct.unpack("<i", raw)[0]
+
+
+def write_i32(memory: bytearray, addr: int, value: int) -> None:
+    memory[addr : addr + 4] = struct.pack("<i", value)
+
+
+def step_execute(op: str, args: Tuple[int, ...], st: MachineState) -> None:
+    if op == "nop" or op == "end":
+        return
+    if op == "drop":
+        st.stack.pop()
+        return
+    if op == "i32.const":
+        st.stack.append(int(args[0]))
+        return
+    if op == "i64.const":
+        st.stack.append(int(args[0]))
+        return
+    if op == "local.get":
+        idx = int(args[0])
+        st.stack.append(st.locals_[idx])
+        return
+    if op == "local.set":
+        idx = int(args[0])
+        st.locals_[idx] = st.stack.pop()
+        return
+    if op == "i32.add":
+        rhs = st.stack.pop()
+        lhs = st.stack.pop()
+        st.stack.append((lhs + rhs) & 0xFFFFFFFF)
+        return
+    if op == "i32.sub":
+        rhs = st.stack.pop()
+        lhs = st.stack.pop()
+        st.stack.append((lhs - rhs) & 0xFFFFFFFF)
+        return
+    if op == "i32.store":
+        # wasm operand order on stack: ..., addr, value
+        _align, offset, memidx = args
+        if memidx != 0:
+            raise ValueError("POC-3 currently supports memidx=0 only")
+        value = st.stack.pop()
+        addr = st.stack.pop()
+        write_i32(st.memory, addr + offset, int(value))
+        return
+    if op == "i32.load":
+        _align, offset, memidx = args
+        if memidx != 0:
+            raise ValueError("POC-3 currently supports memidx=0 only")
+        addr = st.stack.pop()
+        st.stack.append(read_i32(st.memory, addr + offset))
+        return
+    raise ValueError(f"Unsupported op in executor subset: {op}")
+
+
+def run_legacy(instrs: List[Instr], init: MachineState) -> MachineState:
+    st = init.clone()
+    for ins in instrs:
+        step_execute(ins.opcode, ins.args, st)
+    return st
+
+
+def run_split(stream: SplitStream, init: MachineState) -> MachineState:
+    st = init.clone()
+    for i, op_id in enumerate(stream.opcodes):
+        op = ID_TO_OPCODE[op_id]
+        off = stream.imm_offsets[i]
+        if off == OFFSET_NONE:
+            args = tuple()
+        else:
+            args, _ = decode_immediate(op, stream.imm_blob, off)
+        step_execute(op, args, st)
+    return st
