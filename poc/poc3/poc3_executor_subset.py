@@ -228,3 +228,87 @@ def run_split(stream: SplitStream, init: MachineState) -> MachineState:
             args, _ = decode_immediate(op, stream.imm_blob, off)
         step_execute(op, args, st)
     return st
+
+
+def states_equal(a: MachineState, b: MachineState) -> Tuple[bool, str]:
+    if a.stack != b.stack:
+        return False, f"stack mismatch: {a.stack} vs {b.stack}"
+    if a.locals_ != b.locals_:
+        return False, f"locals mismatch: {a.locals_} vs {b.locals_}"
+    if a.memory != b.memory:
+        # summarize first mismatch byte
+        for i, (x, y) in enumerate(zip(a.memory, b.memory)):
+            if x != y:
+                return False, f"memory mismatch at byte {i}: {x} vs {y}"
+        return False, "memory mismatch"
+    return True, "final machine state matches"
+
+
+def timed_runs_legacy(instrs: List[Instr], init: MachineState, iterations: int) -> float:
+    t0 = time.perf_counter()
+    for _ in range(iterations):
+        run_legacy(instrs, init)
+    t1 = time.perf_counter()
+    return (t1 - t0) * 1000.0
+
+
+def timed_runs_split(stream: SplitStream, init: MachineState, iterations: int) -> float:
+    t0 = time.perf_counter()
+    for _ in range(iterations):
+        run_split(stream, init)
+    t1 = time.perf_counter()
+    return (t1 - t0) * 1000.0
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="POC-3 executor subset validation")
+    parser.add_argument("--input", required=True, help="Program CSV")
+    parser.add_argument("--iterations", type=int, default=5000, help="Timing iterations")
+    parser.add_argument("--locals", type=int, default=4, help="Local slots")
+    parser.add_argument("--memory-bytes", type=int, default=256, help="Memory bytes")
+    args = parser.parse_args()
+
+    path = Path(args.input)
+    if not path.exists():
+        raise SystemExit(f"Input file not found: {path}")
+
+    instrs = parse_csv(path)
+    stream = encode_split(instrs)
+
+    init_state = MachineState(
+        stack=[],
+        locals_=[0] * args.locals,
+        memory=bytearray(args.memory_bytes),
+    )
+
+    out_legacy = run_legacy(instrs, init_state)
+    out_split = run_split(stream, init_state)
+    ok, msg = states_equal(out_legacy, out_split)
+
+    t_legacy = timed_runs_legacy(instrs, init_state, args.iterations)
+    t_split = timed_runs_split(stream, init_state, args.iterations)
+
+    delta_pct = ((t_split - t_legacy) / t_legacy * 100.0) if t_legacy > 0 else 0.0
+
+    print("=== POC-3 Executor Subset Validation ===")
+    print(f"Input file                  : {path}")
+    print(f"Instruction count           : {len(instrs)}")
+    print(f"Timing iterations           : {args.iterations}")
+    print("")
+    print(f"Behavior parity             : {'PASS' if ok else 'FAIL'}")
+    print(f"Parity details              : {msg}")
+    print("")
+    print("Timing (same program repeatedly):")
+    print(f"- Legacy path               : {t_legacy:.3f} ms")
+    print(f"- Split path                : {t_split:.3f} ms")
+    print(f"- Delta                     : {delta_pct:+.2f}%")
+    print("")
+    print("Final state snapshot:")
+    print(f"- Stack                     : {out_legacy.stack}")
+    print(f"- Locals                    : {out_legacy.locals_}")
+    print(f"- Memory[0:32]              : {list(out_legacy.memory[:32])}")
+
+
+if __name__ == "__main__":
+    main()
+
