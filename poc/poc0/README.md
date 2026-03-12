@@ -57,6 +57,16 @@ The script prints:
 - estimated waste + reducible fraction
 - top opcodes by count
 
+Sample run highlights:
+
+```text
+Total instructions: 84,030
+Current model (fixed 32B each): 2,688,960 B (2.56 MiB)
+Estimated logical needed      : 1,239,330 B (1.18 MiB)
+Estimated waste               : 1,449,630 B (1.38 MiB)
+Estimated reducible fraction  : 53.91%
+```
+
 ## Important note
 
 This is a planning baseline estimator, not final performance proof.

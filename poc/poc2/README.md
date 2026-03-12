@@ -28,6 +28,16 @@ python3 "poc/poc2/poc2_dual_decode_parity.py" \
 - parity PASS/FAIL
 - short decoded instruction preview
 
+Sample run highlights:
+
+```text
+Encoded bytecode length : 77 B
+Legacy decoded count    : 13
+Split decoded count     : 13
+Parity                  : PASS
+Details                 : parity passed
+```
+
 ## Scope
 
 This is a subset prototype (same family scope as early migration stages).

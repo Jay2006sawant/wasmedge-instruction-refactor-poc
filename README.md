@@ -28,6 +28,8 @@ python3 "poc/poc3/poc3_executor_subset.py" --input "poc/poc3/samples/program_sub
 - POC-2: decode parity PASS/FAIL with mismatch details
 - POC-3: executor state parity PASS/FAIL + timing signal
 
+Each `pocX/README.md` includes a sample output block for quick verification.
+
 ## Notes
 
 - These are prototype artifacts for design validation and migration safety.

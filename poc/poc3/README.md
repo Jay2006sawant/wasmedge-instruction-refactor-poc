@@ -45,3 +45,14 @@ This is the bridge between storage parity and runtime parity:
 Timing output is an early signal only. Correctness parity is the primary goal in
 this stage; performance tuning belongs to later integrated milestones.
 
+Sample run highlights:
+
+```text
+Instruction count : 14
+Behavior parity   : PASS
+Parity details    : final machine state matches
+Legacy path       : 18.709 ms
+Split path        : 40.489 ms
+Delta             : +116.41%
+```
+

@@ -30,6 +30,16 @@ python3 "poc/poc1/poc1_split_storage.py" \
   - old fixed-size model (32 bytes per instruction)
   - split stream estimate (`opcode bytes + offset bytes + immediate blob`)
 
+Sample run highlights:
+
+```text
+Instruction count          : 16
+Old model estimate         : 512 B
+Split model estimate       : 152 B
+Estimated savings          : 360 B (70.31%)
+Roundtrip parity           : PASS
+```
+
 This is a prototype for architecture validation, not the final runtime result.
 
 ## Limitation note
