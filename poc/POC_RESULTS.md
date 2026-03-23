@@ -98,9 +98,9 @@ Purpose:
 ### Verification output (sample run)
 - Instruction count: `14`
 - Behavior parity: `PASS`
-- Legacy timing: `23.286 ms` (5000 iterations)
-- Split timing: `42.824 ms` (5000 iterations)
-- Delta: `+83.90%`
+- Legacy timing: `26.459 ms` (5000 iterations)
+- Split timing: `44.946 ms` (5000 iterations)
+- Delta: `+69.87%`
 
 ### Notes
 - Performance regression at this stage is expected for naive prototype decode.

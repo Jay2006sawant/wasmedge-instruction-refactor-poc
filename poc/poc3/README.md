@@ -51,8 +51,8 @@ Sample run highlights:
 Instruction count : 14
 Behavior parity   : PASS
 Parity details    : final machine state matches
-Legacy path       : 18.709 ms
-Split path        : 40.489 ms
-Delta             : +116.41%
+Legacy path       : 26.459 ms
+Split path        : 44.946 ms
+Delta             : +69.87%
 ```
 
